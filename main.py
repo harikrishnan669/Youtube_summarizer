@@ -69,3 +69,9 @@ def run_bot():
 @app.get("/summarize")
 def summarize_api(url: str):
     return {"summary": summarize_youtube(url)}
+
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"message": "Hello, FastAPI is live!"}
