@@ -72,7 +72,7 @@ Your personal study assistant! This bot makes learning easier by converting YouT
 ## File Structure
 ```
 📦 youtube-summarizer-bot
- ┣ 📜 bot.py            # Main bot code
+ ┣ 📜 main.py            # Main bot code
  ┣ 📜 requirements.txt  # Dependencies
  ┣ 📜 README.md         # Documentation
 ```
