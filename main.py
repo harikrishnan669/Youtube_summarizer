@@ -167,7 +167,7 @@ async def steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text)
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🧹 Clearing chat messages is not fully supported in all Telegram clients.")
+    await update.message.reply_text("🧹 Clearing chat mess ages is not fully supported in all Telegram clients.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
