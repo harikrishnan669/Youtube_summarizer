@@ -141,6 +141,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Hi! Send me a YouTube link (English/Malayalam). I will summarize it and generate a PDF.\nType /help to see commands."
     )
+async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if "active_process" in context.user_data and context.user_data["active_process"] != "idle":
+        last_task = context.user_data["active_process"]
+        context.user_data["active_process"] = "idle"  # Reset → stops handle_message
+        await update.message.reply_text(f"❌ The last operation **{last_task}** was cancelled.")
+    else:
+        await update.message.reply_text("⚠️ No active operation to cancel.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
@@ -149,6 +156,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/steps - Show steps bot performs\n"
         "/summary Just send youtubelink - Get PDF summary\n"
         "/clear - Clear bot messages\n"
+        "/cancel- Cancel the last operation\n"
     )
     await update.message.reply_text(text)
 
@@ -169,6 +177,7 @@ async def steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🧹 Clearing chat mess ages is not fully supported in all Telegram clients.")
 
+# --- inside handle_message ---
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if not user_sessions.get(chat_id):
@@ -180,20 +189,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Please send a valid YouTube link.")
         return
 
+    # mark process as active
+    context.user_data["active_process"] = "summarizing"
+
     await context.bot.send_message(chat_id, "📥 Fetching transcript... Please wait ⏳")
     try:
+        # check cancellation before each heavy step
+        if context.user_data.get("active_process") == "idle":
+            await context.bot.send_message(chat_id, "❌ Operation cancelled.")
+            return
+
         transcript, lang = await asyncio.to_thread(get_transcript, url)
+
+        if context.user_data.get("active_process") == "idle":
+            await context.bot.send_message(chat_id, "❌ Operation cancelled.")
+            return
+
         await context.bot.send_message(chat_id, "📝 Summarizing...")
+
         if lang == "en":
             summary = await asyncio.to_thread(summarize_en_text, transcript)
         else:
             translated = await asyncio.to_thread(translate_ml_to_en, transcript)
             summary = await asyncio.to_thread(summarize_en_text, translated)
 
+        if context.user_data.get("active_process") == "idle":
+            await context.bot.send_message(chat_id, "❌ Operation cancelled.")
+            return
+
         await send_long_message_safe(context.bot, chat_id, "Summary:\n\n" + summary)
         keypoints = extract_keypoints(summary)
+
         pdf_file = f"summary_{uuid.uuid4().hex}.pdf"
         await asyncio.to_thread(make_pdf, "YouTube Summary", summary, keypoints, pdf_file)
+
+        if context.user_data.get("active_process") == "idle":
+            os.remove(pdf_file)
+            await context.bot.send_message(chat_id, "❌ Operation cancelled.")
+            return
 
         with open(pdf_file, "rb") as f:
             await context.bot.send_document(chat_id, f, filename="summary.pdf", caption="PDF with key points")
@@ -203,6 +236,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await context.bot.send_message(chat_id, f"❌ Error: {e}")
         print(traceback.format_exc())
+    finally:
+        context.user_data["active_process"] = "idle"  # reset state
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -210,6 +245,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("steps", steps_command))
     app.add_handler(CommandHandler("clear", clear_command))
+    app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("🚀 Bot running...")
