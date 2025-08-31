@@ -3,6 +3,8 @@
 ## Your personal study assistant!
 Your personal study assistant! This bot makes learning easier by converting YouTube videos into summarized notes with key points. Just send a video link, and get a clear PDF summary—perfect for studying, revising, or quickly understanding any topic. Say goodbye to long videos and hello to smart learning
 
+A demo project to study about ML models and how the models works
+
 ---
 
 ## Features
