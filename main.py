@@ -9,8 +9,16 @@ from transformers import pipeline, MBartForConditionalGeneration, MBart50Tokeniz
 import whisper
 from fpdf import FPDF
 import yt_dlp
+from dotenv import load_dotenv
 
-BOT_TOKEN = "8227938502:AAG0rmUhQJB1m8nrq7AAxMkuG5t-cB3l7so"
+# Load .env file
+load_dotenv()
+
+# Get token from environment
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+if not BOT_TOKEN:
+    raise RuntimeError("❌ BOT_TOKEN is not set in environment")
 
 print("⏳ Loading models... (first time may take a while)")
 
