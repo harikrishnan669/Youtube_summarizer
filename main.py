@@ -22,12 +22,8 @@ whisper_model = whisper.load_model("base")
 
 print("✅ Models loaded successfully!")
 
-# Track active user sessions
 user_sessions = {}
 
-# -----------------------------
-# Helper functions
-# -----------------------------
 def download_audio(video_url: str) -> str:
     temp_file = f"temp_{uuid.uuid4().hex}"
     ydl_opts = {
@@ -83,14 +79,11 @@ def extract_keypoints(summary: str, max_points: int = 8):
         sentences = [summary[i:i+120].strip() for i in range(0,len(summary),120)]
     return sentences[:max_points]
 
-# -----------------------------
-# PDF maker (avoiding emojis)
-# -----------------------------
 def make_pdf(title: str, summary: str, keypoints: list[str], filename: str):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
 
-    # Title page
+
     pdf.add_page()
     pdf.set_font("Arial", "B", 20)
     pdf.cell(0, 20, title[:120], ln=True, align="C")
@@ -98,7 +91,7 @@ def make_pdf(title: str, summary: str, keypoints: list[str], filename: str):
     pdf.set_font("Arial", "I", 12)
     pdf.multi_cell(0, 8, "This PDF contains a summarized version of the YouTube video along with key points.", align="C")
 
-    # Summary section
+
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
     pdf.cell(0, 10, "Summary", ln=True)
@@ -106,7 +99,7 @@ def make_pdf(title: str, summary: str, keypoints: list[str], filename: str):
     pdf.set_font("Arial", "", 12)
     pdf.multi_cell(0, 7, summary)
 
-    # Key points section
+
     if keypoints:
         pdf.ln(8)
         pdf.set_font("Arial", "B", 16)
@@ -125,9 +118,6 @@ def make_pdf(title: str, summary: str, keypoints: list[str], filename: str):
 
     pdf.output(filename)
 
-# -----------------------------
-# Safe long message sender
-# -----------------------------
 async def send_long_message_safe(bot, chat_id: int, text: str):
     if not text.strip():
         return
@@ -145,9 +135,6 @@ async def send_long_message_safe(bot, chat_id: int, text: str):
         except Exception:
             pass
 
-# -----------------------------
-# Bot handlers
-# -----------------------------
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_sessions[chat_id] = True
@@ -160,7 +147,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/start - Start bot\n"
         "/help - Show commands\n"
         "/steps - Show steps bot performs\n"
-        "/summary <YouTube Link> - Get PDF summary\n"
+        "/summary Just send youtubelink - Get PDF summary\n"
         "/clear - Clear bot messages\n"
     )
     await update.message.reply_text(text)
@@ -217,9 +204,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id, f"❌ Error: {e}")
         print(traceback.format_exc())
 
-# -----------------------------
-# Main
-# -----------------------------
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start_command))
