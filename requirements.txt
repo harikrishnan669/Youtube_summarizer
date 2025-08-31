@@ -1,5 +1,7 @@
-fastapi
-uvicorn
-youtube-transcript-api
+python-telegram-bot==20.3
 transformers
-requests
+torch
+torchaudio
+whisper
+fpdf
+yt-dlp

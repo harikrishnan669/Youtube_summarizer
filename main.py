@@ -1,77 +1,235 @@
-from fastapi import FastAPI, Request
-from youtube_transcript_api import YouTubeTranscriptApi
-from transformers import pipeline
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import re
 import asyncio
-import threading
+import os
+import re
+import uuid
+import traceback
+from telegram import Update, BotCommand
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from transformers import pipeline, MBartForConditionalGeneration, MBart50TokenizerFast
+import whisper
+from fpdf import FPDF
+import yt_dlp
 
-# --- FASTAPI APP ---
-app = FastAPI()
+BOT_TOKEN = "8227938502:AAG0rmUhQJB1m8nrq7AAxMkuG5t-cB3l7so"
 
-# Load summarizer
-summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+print("⏳ Loading models... (first time may take a while)")
 
-# Extract YouTube video ID
-def extract_video_id(url: str):
-    if "v=" in url:
-        return url.split("v=")[1].split("&")[0]
-    elif "youtu.be/" in url:
-        return url.split("youtu.be/")[1].split("?")[0]
-    return None
+# Load models
+summarizer_en = pipeline("summarization", model="facebook/bart-large-cnn")
+tokenizer_ml = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt")
+model_ml = MBartForConditionalGeneration.from_pretrained("facebook/mbart-large-50-many-to-many-mmt")
+whisper_model = whisper.load_model("base")
 
-def summarize_youtube(url: str):
-    video_id = extract_video_id(url)
-    transcript = YouTubeTranscriptApi.get_transcript(video_id)
-    text = " ".join([t["text"] for t in transcript])
+print("✅ Models loaded successfully!")
 
-    # Limit text for summarizer
-    if len(text) > 2000:
-        text = text[:2000]
+# Track active user sessions
+user_sessions = {}
 
-    summary = summarizer(text, max_length=150, min_length=50, do_sample=False)
-    return summary[0]["summary_text"]
+# -----------------------------
+# Helper functions
+# -----------------------------
+def download_audio(video_url: str) -> str:
+    temp_file = f"temp_{uuid.uuid4().hex}"
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": temp_file,
+        "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "192"}],
+        "quiet": True,
+        "noplaylist": True
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        ydl.download([video_url])
+    actual_file = temp_file + ".mp3"
+    if not os.path.exists(actual_file):
+        raise Exception(f"Audio download failed: {actual_file} does not exist")
+    return actual_file
 
-# --- TELEGRAM BOT ---
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+def get_transcript(video_url: str):
+    audio_file = download_audio(video_url)
+    try:
+        result = whisper_model.transcribe(audio_file)
+        transcript = result.get("text", "")
+        lang = "ml" if result.get("language", "en").startswith("ml") else "en"
+    finally:
+        if os.path.exists(audio_file):
+            os.remove(audio_file)
+    if not transcript.strip():
+        raise Exception("Failed to extract transcript ❌")
+    return transcript.strip(), lang
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Send me a YouTube link and I'll summarize it!")
+def summarize_en_text(text: str):
+    chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
+    summary = []
+    for chunk in chunks:
+        try:
+            summary.append(summarizer_en(chunk, max_length=120, min_length=30, do_sample=False)[0]["summary_text"])
+        except:
+            summary.append(chunk[:300])
+    return " ".join(summary).strip()
+
+def translate_ml_to_en(text: str):
+    tokenizer_ml.src_lang = "ml_IN"
+    inputs = tokenizer_ml(text, return_tensors="pt", max_length=1024, truncation=True)
+    translated_ids = model_ml.generate(
+        inputs["input_ids"], max_length=1024, num_beams=4,
+        forced_bos_token_id=tokenizer_ml.lang_code_to_id["en_XX"]
+    )
+    return tokenizer_ml.decode(translated_ids[0], skip_special_tokens=True)
+
+def extract_keypoints(summary: str, max_points: int = 8):
+    sentences = re.split(r'(?<=[\.\?\!])\s+', summary)
+    sentences = [s.strip() for s in sentences if len(s.strip())>25]
+    if not sentences:
+        sentences = [summary[i:i+120].strip() for i in range(0,len(summary),120)]
+    return sentences[:max_points]
+
+# -----------------------------
+# PDF maker (avoiding emojis)
+# -----------------------------
+def make_pdf(title: str, summary: str, keypoints: list[str], filename: str):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Title page
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 20)
+    pdf.cell(0, 20, title[:120], ln=True, align="C")
+    pdf.ln(10)
+    pdf.set_font("Arial", "I", 12)
+    pdf.multi_cell(0, 8, "This PDF contains a summarized version of the YouTube video along with key points.", align="C")
+
+    # Summary section
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(0, 10, "Summary", ln=True)
+    pdf.ln(5)
+    pdf.set_font("Arial", "", 12)
+    pdf.multi_cell(0, 7, summary)
+
+    # Key points section
+    if keypoints:
+        pdf.ln(8)
+        pdf.set_font("Arial", "B", 16)
+        pdf.cell(0, 10, "Key Points", ln=True)
+        pdf.ln(3)
+        pdf.set_font("Arial", "", 12)
+        for idx, kp in enumerate(keypoints, start=1):
+            pdf.multi_cell(0, 7, f"- {kp}")
+            pdf.ln(1)
+
+    # Footer
+    pdf.set_auto_page_break(auto=False)
+    pdf.set_y(-15)
+    pdf.set_font("Arial", "I", 8)
+    pdf.cell(0, 6, "Generated by YouTube Summarizer Bot", ln=True, align="C")
+
+    pdf.output(filename)
+
+# -----------------------------
+# Safe long message sender
+# -----------------------------
+async def send_long_message_safe(bot, chat_id: int, text: str):
+    if not text.strip():
+        return
+    text = re.sub(r"<[^>]+>", "", text)
+    text = "".join(ch if ch.isprintable() else " " for ch in text)
+    max_len = 3800
+    try:
+        for i in range(0, len(text), max_len):
+            chunk = text[i:i+max_len].strip()
+            if chunk:
+                await bot.send_message(chat_id=chat_id, text=chunk)
+    except Exception:
+        try:
+            await bot.send_message(chat_id=chat_id, text="(Error sending full text, see PDF)")
+        except Exception:
+            pass
+
+# -----------------------------
+# Bot handlers
+# -----------------------------
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user_sessions[chat_id] = True
+    await update.message.reply_text(
+        "👋 Hi! Send me a YouTube link (English/Malayalam). I will summarize it and generate a PDF.\nType /help to see commands."
+    )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "/start - Start bot\n"
+        "/help - Show commands\n"
+        "/steps - Show steps bot performs\n"
+        "/summary <YouTube Link> - Get PDF summary\n"
+        "/clear - Clear bot messages\n"
+    )
+    await update.message.reply_text(text)
+
+async def steps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = (
+        "Bot Steps:\n"
+        "1. Download YouTube audio\n"
+        "2. Transcribe using Whisper\n"
+        "3. Detect language\n"
+        "4. Translate if Malayalam\n"
+        "5. Summarize\n"
+        "6. Extract key points\n"
+        "7. Generate PDF\n"
+        "8. Send PDF to user"
+    )
+    await update.message.reply_text(text)
+
+async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🧹 Clearing chat messages is not fully supported in all Telegram clients.")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    chat_id = update.effective_chat.id
+    if not user_sessions.get(chat_id):
+        await update.message.reply_text("⚠️ Please type /start to begin.")
+        return
 
-    # Simple YouTube link check
-    if "youtube.com" in text or "youtu.be" in text:
-        await update.message.reply_text("Fetching transcript and summarizing... ⏳")
+    url = update.message.text.strip()
+    if "youtube.com" not in url and "youtu.be" not in url:
+        await update.message.reply_text("⚠️ Please send a valid YouTube link.")
+        return
 
-        try:
-            summary = summarize_youtube(text)
-            await update.message.reply_text("✨ Summary:\n\n" + summary)
-        except Exception as e:
-            await update.message.reply_text(f"❌ Error: {str(e)}")
-    else:
-        await update.message.reply_text("Please send me a valid YouTube link.")
+    await context.bot.send_message(chat_id, "📥 Fetching transcript... Please wait ⏳")
+    try:
+        transcript, lang = await asyncio.to_thread(get_transcript, url)
+        await context.bot.send_message(chat_id, "📝 Summarizing...")
+        if lang == "en":
+            summary = await asyncio.to_thread(summarize_en_text, transcript)
+        else:
+            translated = await asyncio.to_thread(translate_ml_to_en, transcript)
+            summary = await asyncio.to_thread(summarize_en_text, translated)
 
-def run_bot():
-    import asyncio
-    asyncio.set_event_loop(asyncio.new_event_loop())  # create a loop for this thread
+        await send_long_message_safe(context.bot, chat_id, "Summary:\n\n" + summary)
+        keypoints = extract_keypoints(summary)
+        pdf_file = f"summary_{uuid.uuid4().hex}.pdf"
+        await asyncio.to_thread(make_pdf, "YouTube Summary", summary, keypoints, pdf_file)
 
-    app_bot = Application.builder().token(TOKEN).build()
-    app_bot.add_handler(CommandHandler("start", start))
-    app_bot.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        with open(pdf_file, "rb") as f:
+            await context.bot.send_document(chat_id, f, filename="summary.pdf", caption="PDF with key points")
 
-    app_bot.run_polling()
+        os.remove(pdf_file)
 
+    except Exception as e:
+        await context.bot.send_message(chat_id, f"❌ Error: {e}")
+        print(traceback.format_exc())
 
-# --- FASTAPI ENDPOINT (Optional: For testing via API) ---
-@app.get("/summarize")
-def summarize_api(url: str):
-    return {"summary": summarize_youtube(url)}
+# -----------------------------
+# Main
+# -----------------------------
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("steps", steps_command))
+    app.add_handler(CommandHandler("clear", clear_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-app = FastAPI()
+    print("🚀 Bot running...")
+    app.run_polling()
 
-@app.get("/")
-def root():
-    return {"message": "Hello, FastAPI is live!"}
+if __name__ == "__main__":
+    main()
