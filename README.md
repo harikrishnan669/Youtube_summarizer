@@ -184,7 +184,17 @@ This video explains the basics of AI, its applications in daily life, and future
 Pull requests are welcome! Please open an issue first to discuss major changes.
 
 ---
+## Scrrenshots
+<table>
+  <tr>
+    <td><img src="https://github.com/user-attachments/assets/33f3e9c8-57bb-4ff2-8798-e312eb489b6a" width="200"/></td>
+    <td><img src="https://github.com/user-attachments/assets/df4674b1-3496-41dc-a74e-7cb5a68bf476" width="200"/></td>
+    <td><img src="https://github.com/user-attachments/assets/52b57430-34e2-4c5f-ab70-9b72132e2324" width="200"/></td>
+    <td><img src="https://github.com/user-attachments/assets/3485b28f-d3b0-4820-b878-3829cc74bf6e" width="200"/></td>
+  </tr>
+</table>
 
+---
 ## 📄 License
 
 MIT License – Feel free to use and modify.
