@@ -1,20 +1,20 @@
-# YouTube Summarizer Telegram Bot
+# YouTube Summarizer Bot – Your Personal Study Assistant
 
-An **AI-powered Telegram bot** that converts YouTube videos into concise **summaries + key points in PDF**.
-It works for both **English** and **Malayalam** videos 🎧📑.
+## Your personal study assistant!
+Your personal study assistant! This bot makes learning easier by converting YouTube videos into summarized notes with key points. Just send a video link, and get a clear PDF summary—perfect for studying, revising, or quickly understanding any topic. Say goodbye to long videos and hello to smart learning
 
 ---
 
 ## Features
 
-* 📥 Download YouTube audio with `yt-dlp`
-* 📝 Transcribe audio into text using **OpenAI Whisper**
-* 🌐 Detect spoken language automatically
-* 🌍 Translate **Malayalam → English** using **mBART**
-* 📖 Summarize long transcripts using **BART Large CNN**
-* 📌 Extract key points for quick revision
-* 📄 Generate a **PDF report** with summary + key points
-* 🤖 Get results directly in Telegram
+* Download YouTube audio with `yt-dlp`
+*  Transcribe audio into text using **OpenAI Whisper**
+*  Detect spoken language automatically
+*  Translate **Malayalam → English** using **mBART**
+*  Summarize long transcripts using **BART Large CNN**
+*  Extract key points for quick revision
+*  Generate a **PDF report** with summary + key points
+*  Get results directly in Telegram
 
 ---
 
@@ -130,7 +130,7 @@ python bot.py
 
 ---
 
-## 🤖 Usage
+##  Usage
 
 * Start the bot in Telegram: `/start`
 * Send a YouTube link 🎥
