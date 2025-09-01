@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/Yotube summarizer.iml" filepath="$PROJECT_DIR$/.idea/Yotube summarizer.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/Yotubesummarizer.iml" filepath="$PROJECT_DIR$/.idea/Yotubesummarizer.iml" />
     </modules>
   </component>
 </project>

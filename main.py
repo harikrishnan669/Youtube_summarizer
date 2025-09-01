@@ -26,7 +26,7 @@ print("⏳ Loading models... (first time may take a while)")
 summarizer_en = pipeline("summarization", model="facebook/bart-large-cnn")
 tokenizer_ml = MBart50TokenizerFast.from_pretrained("facebook/mbart-large-50-many-to-many-mmt")
 model_ml = MBartForConditionalGeneration.from_pretrained("facebook/mbart-large-50-many-to-many-mmt")
-whisper_model = whisper.load_model("base")
+whisper_model = whisper.load_model("small")
 
 print("✅ Models loaded successfully!")
 
@@ -49,27 +49,38 @@ def download_audio(video_url: str) -> str:
     return actual_file
 
 def get_transcript(video_url: str):
+    # Download audio first
     audio_file = download_audio(video_url)
     try:
+        # Faster Whisper transcription
         result = whisper_model.transcribe(audio_file)
-        transcript = result.get("text", "")
+        transcript = result.get("text", "").strip()
         lang = "ml" if result.get("language", "en").startswith("ml") else "en"
     finally:
         if os.path.exists(audio_file):
             os.remove(audio_file)
-    if not transcript.strip():
-        raise Exception("Failed to extract transcript ❌")
-    return transcript.strip(), lang
+
+    if not transcript:
+        raise Exception("❌ Failed to extract transcript")
+
+    # Only translate if Malayalam
+    if lang == "ml":
+        transcript = translate_ml_to_en(transcript)
+        lang = "en"
+
+    return transcript, lang
 
 def summarize_en_text(text: str):
-    chunks = [text[i:i+1000] for i in range(0, len(text), 1000)]
+    chunks = [text[i:i+500] for i in range(0, len(text), 500)]  # smaller chunks → faster
     summary = []
     for chunk in chunks:
         try:
-            summary.append(summarizer_en(chunk, max_length=120, min_length=30, do_sample=False)[0]["summary_text"])
+            # Short summary first (for chat)
+            summary.append(summarizer_en(chunk, max_length=50, min_length=20, do_sample=False)[0]["summary_text"])
         except:
-            summary.append(chunk[:300])
+            summary.append(chunk[:100])
     return " ".join(summary).strip()
+
 
 def translate_ml_to_en(text: str):
     tokenizer_ml.src_lang = "ml_IN"
@@ -197,39 +208,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Please send a valid YouTube link.")
         return
 
-    # mark process as active
     context.user_data["active_process"] = "summarizing"
-
     await context.bot.send_message(chat_id, "📥 Fetching transcript... Please wait ⏳")
-    try:
-        # check cancellation before each heavy step
-        if context.user_data.get("active_process") == "idle":
-            await context.bot.send_message(chat_id, "❌ Operation cancelled.")
-            return
 
+    try:
+        # 1️⃣ Transcribe audio
         transcript, lang = await asyncio.to_thread(get_transcript, url)
 
         if context.user_data.get("active_process") == "idle":
             await context.bot.send_message(chat_id, "❌ Operation cancelled.")
             return
 
-        await context.bot.send_message(chat_id, "📝 Summarizing...")
-
-        if lang == "en":
-            summary = await asyncio.to_thread(summarize_en_text, transcript)
+        # 2️⃣ Fast short summary for chat
+        if lang == "ml":
+            short_translated = await asyncio.to_thread(translate_ml_to_en, transcript[:1000])
         else:
-            translated = await asyncio.to_thread(translate_ml_to_en, transcript)
-            summary = await asyncio.to_thread(summarize_en_text, translated)
+            short_translated = transcript[:1000]
+
+        short_summary = await asyncio.to_thread(summarizer_en, short_translated, max_length=80, min_length=20, do_sample=False)
+        chat_summary = short_summary[0]["summary_text"]
+
+        await context.bot.send_message(chat_id, "📝 Short summary:\n\n" + chat_summary)
 
         if context.user_data.get("active_process") == "idle":
             await context.bot.send_message(chat_id, "❌ Operation cancelled.")
             return
 
-        await send_long_message_safe(context.bot, chat_id, "Summary:\n\n" + summary)
-        keypoints = extract_keypoints(summary)
+        # 3️⃣ Detailed summary for PDF in background
+        await context.bot.send_message(chat_id, "📄 Generating detailed PDF summary... This may take a while ⏳")
+
+        if lang == "ml":
+            full_translated = await asyncio.to_thread(translate_ml_to_en, transcript)
+        else:
+            full_translated = transcript
+
+        detailed_summary = await asyncio.to_thread(summarize_en_text, full_translated)
+        keypoints = extract_keypoints(detailed_summary)
 
         pdf_file = f"summary_{uuid.uuid4().hex}.pdf"
-        await asyncio.to_thread(make_pdf, "YouTube Summary", summary, keypoints, pdf_file)
+        await asyncio.to_thread(make_pdf, "YouTube Summary", detailed_summary, keypoints, pdf_file)
 
         if context.user_data.get("active_process") == "idle":
             os.remove(pdf_file)
@@ -237,7 +254,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         with open(pdf_file, "rb") as f:
-            await context.bot.send_document(chat_id, f, filename="summary.pdf", caption="PDF with key points")
+            await context.bot.send_document(chat_id, f, filename="summary.pdf", caption="Detailed PDF with key points")
 
         os.remove(pdf_file)
 
@@ -245,7 +262,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id, f"❌ Error: {e}")
         print(traceback.format_exc())
     finally:
-        context.user_data["active_process"] = "idle"  # reset state
+        context.user_data["active_process"] = "idle"
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
