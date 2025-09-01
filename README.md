@@ -86,8 +86,8 @@ A demo project to study about ML models and how the models works
 ### 1. Clone the Repo
 
 ```bash
-git clone https://github.com/yourusername/youtube-summarizer-bot.git
-cd youtube-summarizer-bot
+git clone https://github.com/harikrishnan669/youtube-summarizer.git
+cd youtube-summarizer
 ```
 
 ### 2. Create Virtual Environment (Optional but Recommended)
