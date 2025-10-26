@@ -1,4 +1,7 @@
 # YouTube Summarizer Bot – Your Personal Study Assistant
+<div align="center">
+  <img width="640" height="360" alt="YTSummarizer" src="https://github.com/user-attachments/assets/cd9cb536-8198-488f-8936-bcb754460fc6" />
+</div>
 
 ## Your personal study assistant!
 Your personal study assistant! This bot makes learning easier by converting YouTube videos into summarized notes with key points. Just send a video link, and get a clear PDF summary—perfect for studying, revising, or quickly understanding any topic. Say goodbye to long videos and hello to smart learning
